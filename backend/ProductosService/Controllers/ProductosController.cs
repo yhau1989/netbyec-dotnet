@@ -19,7 +19,7 @@ namespace ProductosService.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Producto>>> Get([FromQuery] string nombre, [FromQuery] string categoria)
+        public async Task<ActionResult<IEnumerable<Producto>>> Get([FromQuery] string? nombre = null, [FromQuery] string? categoria = null)
         {
             var productos = await _productoService.GetProductosAsync(nombre, categoria);
             return Ok(productos);

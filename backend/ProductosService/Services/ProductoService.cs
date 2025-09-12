@@ -12,7 +12,7 @@ namespace ProductosService.Services
             _context = context;
         }
 
-        public async Task<List<Producto>> GetProductosAsync(string nombre, string categoria)
+        public async Task<List<Producto>> GetProductosAsync(string? nombre, string? categoria)
         {
             try
             {
