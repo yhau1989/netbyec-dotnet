@@ -1,302 +1,289 @@
-import { useState, useEffect, type FC } from "react";
+import { useState } from "react";
+import {
+  addProduct,
+  updateProduct,
+  deleteProduct,
+} from "../ports/products-port";
+import type { Producto } from "../types/general-types";
 import { useProductosApi } from "../hooks/useProductosApi";
-import type { Producto } from "../hooks/useProductosApi";
-import { useForm } from "react-hook-form";
+import { Table, Button, Alert, Input, Tooltip } from "antd";
+import { SearchOutlined, HistoryOutlined } from "@ant-design/icons";
+import { useNavigate } from "react-router-dom";
+import type { ColumnType } from "antd/es/table";
+import { useRef } from "react";
+import DrawerBase from "../components/custom-drawer";
+import ProductDrawerForm from "../components/product-form";
+import type { ProductDrawerFormValues } from "../components/product-form";
 
-// ...existing code...
+const ProductsView = () => {
+  const { productos, loading, error, refetch } = useProductosApi();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Producto | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
-type ProductForm = {
-  name: string;
-  price: number;
-  stock: number;
-};
-
-// ...existing code...
-
-const ProductsView: FC = () => {
-  const { productos, loading, error } = useProductosApi();
-  const [products, setProducts] = useState<Producto[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
-  const [search, setSearch] = useState<string>("");
-  const [editId, setEditId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<ProductForm | null>(null);
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<ProductForm>();
-
-  // Actualiza el estado local cuando la API responde
-  useEffect(() => {
-    setProducts(productos);
-  }, [productos]);
-
-  // Filtros avanzados: búsqueda por nombre
-  const filteredProducts = products.filter((p) =>
-    p.nombre.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // El formulario local sigue funcionando, pero solo afecta el estado local
-  const onSubmit = (data: ProductForm) => {
-    if (products.some((p) => p.nombre === data.name)) {
-      setMessage("Error: El nombre del producto ya existe.");
-      return;
-    }
-    const newProduct: Producto = {
-      id: products.length + 1,
-      nombre: data.name,
-      descripcion: "",
-      categoria: "",
-      imagen: "",
-      precio: Number(data.price),
-      stock: Number(data.stock),
-    };
-    setProducts([...products, newProduct]);
-    setMessage("Producto creado exitosamente (solo local, no API). ");
-    reset();
+  const navigate = useNavigate();
+  // Eliminar duplicados: handleDeleteProduct solo debe estar aquí
+  const handleDeleteProduct = async (id: number) => {
+    await deleteProduct(id);
+    setCurrentPage(1);
+    await refetch();
   };
 
-  // Eliminar producto
-  const handleDelete = (id: number) => {
-    setProducts(products.filter((p) => p.id !== id));
-    setMessage("Producto eliminado exitosamente.");
-    if (editId === id) {
-      setEditId(null);
-      setEditForm(null);
-    }
-  };
-
-  // Iniciar edición
-  const handleEdit = (product: Producto) => {
-    setEditId(product.id);
-    setEditForm({
-      name: product.nombre,
-      price: product.precio,
-      stock: product.stock,
-    });
-    setMessage(null);
-  };
-
-  // Guardar edición
-  const handleEditSave = () => {
-    if (!editForm) return;
-    // Validación compleja: nombre único (excepto el actual)
-    if (products.some((p) => p.nombre === editForm.name && p.id !== editId)) {
-      setMessage("Error: El nombre del producto ya existe.");
-      return;
-    }
-    setProducts(
-      products.map((p) =>
-        p.id === editId
-          ? {
-              ...p,
-              ...editForm,
-              price: Number(editForm.price),
-              stock: Number(editForm.stock),
-            }
-          : p
-      )
-    );
-    setMessage("Producto editado exitosamente.");
-    setEditId(null);
-    setEditForm(null);
-  };
-
-  // Cancelar edición
-  const handleEditCancel = () => {
-    setEditId(null);
-    setEditForm(null);
-    setMessage(null);
-  };
-
-  return (
-    <div className="p-4">
-      <h2 className="text-2xl font-bold mb-4">Gestión de Productos</h2>
-
-      {/* Mensaje de éxito/error */}
-      {message && (
-        <div
-          className={`mb-4 p-2 rounded ${
-            message.startsWith("Error")
-              ? "bg-red-200 text-red-800"
-              : "bg-green-200 text-green-800"
-          }`}
-        >
-          {message}
-        </div>
-      )}
-
-      {/* Búsqueda avanzada */}
-      <div className="mb-6 flex gap-2 items-center">
-        <input
-          type="text"
-          placeholder="Buscar por nombre..."
-          className="border p-2 rounded w-full max-w-xs"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+  // Filtros y búsqueda para columnas
+  const searchInput = useRef(null);
+  const [tableState, setTableState] = useState({
+    filteredInfo: {},
+    sortedInfo: {},
+  });
+  const getColumnSearchProps = (
+    dataIndex: keyof Producto
+  ): ColumnType<Producto> => ({
+    filterDropdown: ({
+      setSelectedKeys,
+      selectedKeys,
+      confirm,
+      clearFilters,
+    }) => (
+      <div style={{ padding: 8 }}>
+        <Input
+          ref={searchInput}
+          placeholder={`Buscar ${dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e) =>
+            setSelectedKeys(e.target.value ? [e.target.value] : [])
+          }
+          onPressEnter={() => confirm()}
+          style={{ marginBottom: 8, display: "block" }}
         />
-        <button
-          className="bg-gray-300 px-3 py-2 rounded"
-          onClick={() => setSearch("")}
+        <Button
+          type="primary"
+          onClick={() => confirm()}
+          icon={<SearchOutlined />}
+          size="small"
+          style={{ width: 90, marginRight: 8 }}
+        >
+          Buscar
+        </Button>
+        <Button
+          onClick={() => {
+            if (clearFilters) clearFilters();
+            confirm();
+          }}
+          size="small"
+          style={{ width: 90 }}
         >
           Limpiar
-        </button>
+        </Button>
+      </div>
+    ),
+    filterIcon: (filtered: boolean) => (
+      <SearchOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
+    ),
+    onFilter: (value, record) =>
+      record[dataIndex]
+        ? record[dataIndex]
+            .toString()
+            .toLowerCase()
+            .includes((value as string).toLowerCase())
+        : false,
+    sorter: (a, b) => {
+      if (
+        typeof a[dataIndex] === "number" &&
+        typeof b[dataIndex] === "number"
+      ) {
+        return (a[dataIndex] as number) - (b[dataIndex] as number);
+      }
+      return a[dataIndex].toString().localeCompare(b[dataIndex].toString());
+    },
+    sortDirections: ["descend", "ascend"],
+    filteredValue: (tableState.filteredInfo as any)[dataIndex] || null,
+  });
+
+  const columns = [
+    { title: "ID", dataIndex: "id", key: "id", ...getColumnSearchProps("id") },
+    {
+      title: "Nombre",
+      dataIndex: "nombre",
+      key: "nombre",
+      ...getColumnSearchProps("nombre"),
+    },
+    {
+      title: "Descripción",
+      dataIndex: "descripcion",
+      key: "descripcion",
+      ...getColumnSearchProps("descripcion"),
+    },
+    {
+      title: "Categoría",
+      dataIndex: "categoria",
+      key: "categoria",
+      ...getColumnSearchProps("categoria"),
+    },
+    {
+      title: "Imagen",
+      dataIndex: "imagen",
+      key: "imagen",
+      render: (img: string) => (
+        <img
+          src={img}
+          alt="Producto"
+          className="w-12 h-12 object-scale-down rounded"
+        />
+      ),
+    },
+    {
+      title: "Precio",
+      dataIndex: "precio",
+      key: "precio",
+      ...getColumnSearchProps("precio"),
+    },
+    {
+      title: "Stock",
+      dataIndex: "stock",
+      key: "stock",
+      ...getColumnSearchProps("stock"),
+    },
+    {
+      title: "Acciones",
+      key: "acciones",
+      render: (_: unknown, record: Producto) => (
+        <>
+          <Button
+            type="link"
+            onClick={() => {
+              setEditingProduct(record);
+              setEditMode(true);
+              setDrawerOpen(true);
+            }}
+          >
+            Editar
+          </Button>
+          <Button
+            type="link"
+            danger
+            onClick={async () => {
+              await handleDeleteProduct(record.id);
+            }}
+          >
+            Eliminar
+          </Button>
+          <Tooltip title="Ver historial de transacciones">
+            <Button
+              type="link"
+              icon={<HistoryOutlined />}
+              onClick={() => navigate(`/product-transaction/${record.id}`)}
+            />
+          </Tooltip>
+        </>
+      ),
+    },
+  ];
+
+  const handleAddProduct = async (values: ProductDrawerFormValues) => {
+    setSaving(true);
+    try {
+      await addProduct(values);
+      setCurrentPage(1);
+      await refetch();
+    } finally {
+      setSaving(false);
+      setDrawerOpen(false);
+    }
+  };
+
+  const handleEditProduct = async (values: ProductDrawerFormValues) => {
+    if (!editingProduct) return;
+    setSaving(true);
+    try {
+      await updateProduct((editingProduct as Producto).id, values);
+      setCurrentPage(1);
+      await refetch();
+    } finally {
+      setSaving(false);
+      setDrawerOpen(false);
+      setEditingProduct(null);
+      setEditMode(false);
+    }
+  };
+  return (
+    <div className="w-full mx-auto">
+      <h1 className="text-3xl font-bold mb-6">Gestión de Productos</h1>
+
+      {error && <Alert type="error" message={error} className="mb-4" />}
+
+      <div className="mb-6">
+        <Button
+          type="primary"
+          onClick={() => {
+            setDrawerOpen(true);
+            setEditMode(false);
+            setEditingProduct(null);
+          }}
+        >
+          Nuevo Producto
+        </Button>
       </div>
 
-      {/* Formulario de producto */}
-      <form className="mb-6 space-y-4" onSubmit={handleSubmit(onSubmit)}>
-        <div>
-          <label className="block mb-1 font-medium">Nombre</label>
-          <input
-            className="border p-2 rounded w-full"
-            {...register("name", { required: "Campo requerido" })}
-          />
-          {errors.name && (
-            <span className="text-red-600 text-sm">{errors.name.message}</span>
-          )}
-        </div>
-        <div>
-          <label className="block mb-1 font-medium">Precio</label>
-          <input
-            type="number"
-            className="border p-2 rounded w-full"
-            {...register("price", {
-              required: "Campo requerido",
-              min: { value: 0, message: "Debe ser mayor o igual a 0" },
-            })}
-          />
-          {errors.price && (
-            <span className="text-red-600 text-sm">{errors.price.message}</span>
-          )}
-        </div>
-        <div>
-          <label className="block mb-1 font-medium">Stock</label>
-          <input
-            type="number"
-            className="border p-2 rounded w-full"
-            {...register("stock", {
-              required: "Campo requerido",
-              min: { value: 0, message: "Debe ser mayor o igual a 0" },
-            })}
-          />
-          {errors.stock && (
-            <span className="text-red-600 text-sm">{errors.stock.message}</span>
-          )}
-        </div>
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Crear producto
-        </button>
-      </form>
+      <DrawerBase
+        open={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setEditingProduct(null);
+          setEditMode(false);
+        }}
+        title={editMode ? "Editar Producto" : "Agregar Producto"}
+      >
+        <ProductDrawerForm
+          onFinish={editMode ? handleEditProduct : handleAddProduct}
+          loading={saving}
+          {...(editMode && editingProduct
+            ? { initialValues: editingProduct }
+            : {})}
+        />
+      </DrawerBase>
 
-      {/* Tabla dinámica de productos */}
-      {loading ? (
-        <div className="text-gray-500">Cargando productos...</div>
-      ) : error ? (
-        <div className="text-red-600">{error}</div>
-      ) : (
-        <table className="min-w-full border">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border px-2 py-1">ID</th>
-              <th className="border px-2 py-1">Nombre</th>
-              <th className="border px-2 py-1">Precio</th>
-              <th className="border px-2 py-1">Stock</th>
-              <th className="border px-2 py-1">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredProducts.map((product) => (
-              <tr key={product.id}>
-                <td className="border px-2 py-1">{product.id}</td>
-                <td className="border px-2 py-1">
-                  {editId === product.id ? (
-                    <input
-                      className="border p-1 rounded w-full"
-                      value={editForm?.name ?? ""}
-                      onChange={(e) =>
-                        setEditForm((f) =>
-                          f ? { ...f, name: e.target.value } : null
-                        )
-                      }
-                    />
-                  ) : (
-                    product.nombre
-                  )}
-                </td>
-                <td className="border px-2 py-1">
-                  {editId === product.id ? (
-                    <input
-                      type="number"
-                      className="border p-1 rounded w-full"
-                      value={editForm?.price ?? 0}
-                      onChange={(e) =>
-                        setEditForm((f) =>
-                          f ? { ...f, price: Number(e.target.value) } : null
-                        )
-                      }
-                    />
-                  ) : (
-                    `$${product.precio}`
-                  )}
-                </td>
-                <td className="border px-2 py-1">
-                  {editId === product.id ? (
-                    <input
-                      type="number"
-                      className="border p-1 rounded w-full"
-                      value={editForm?.stock ?? 0}
-                      onChange={(e) =>
-                        setEditForm((f) =>
-                          f ? { ...f, stock: Number(e.target.value) } : null
-                        )
-                      }
-                    />
-                  ) : (
-                    product.stock
-                  )}
-                </td>
-                <td className="border px-2 py-1">
-                  {editId === product.id ? (
-                    <>
-                      <button
-                        className="bg-green-500 text-white px-2 py-1 rounded mr-2"
-                        onClick={handleEditSave}
-                      >
-                        Guardar
-                      </button>
-                      <button
-                        className="bg-gray-400 px-2 py-1 rounded"
-                        onClick={handleEditCancel}
-                      >
-                        Cancelar
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="bg-yellow-400 px-2 py-1 rounded mr-2"
-                        onClick={() => handleEdit(product)}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        className="bg-red-500 text-white px-2 py-1 rounded"
-                        onClick={() => handleDelete(product.id)}
-                      >
-                        Eliminar
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      {/* Tabla de productos */}
+      <div className="bg-white rounded shadow overflow-x-auto">
+        <div className="mb-2 flex justify-end">
+          <Button
+            type="default"
+            size="small"
+            onClick={() => {
+              setTableState({ filteredInfo: {}, sortedInfo: {} });
+            }}
+          >
+            Limpiar filtros y ordenamiento
+          </Button>
+        </div>
+        <Table
+          loading={loading}
+          dataSource={[...productos]}
+          rowKey="id"
+          columns={columns}
+          pagination={{
+            current: currentPage,
+            onChange: (page) => setCurrentPage(page),
+            pageSize: 5,
+            showSizeChanger: false,
+          }}
+          className="min-w-[700px]"
+          onChange={(_pagination, filters, sorter) => {
+            setTableState({
+              filteredInfo: filters || {},
+              sortedInfo: sorter || {},
+            });
+          }}
+          {...(Object.keys(tableState.filteredInfo).length > 0 ||
+          Object.keys(tableState.sortedInfo).length > 0
+            ? {
+                filteredInfo: tableState.filteredInfo,
+                sortedInfo: tableState.sortedInfo,
+              }
+            : {})}
+        />
+      </div>
     </div>
   );
 };

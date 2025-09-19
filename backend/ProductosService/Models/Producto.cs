@@ -14,5 +14,6 @@ namespace ProductosService.Models
         public decimal Precio { get; set; }
         [Required]
         public int Stock { get; set; }
+        public bool? Eliminado { get; set; }
     }
 }

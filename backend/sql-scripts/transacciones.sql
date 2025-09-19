@@ -10,5 +10,6 @@ CREATE TABLE Transacciones
     PrecioUnitario DECIMAL(18,2) NOT NULL,
     PrecioTotal DECIMAL(18,2) NOT NULL,
     Detalle NVARCHAR(255),
-    FOREIGN KEY (ProductoId) REFERENCES Productos(Id)
+    FOREIGN KEY (ProductoId) REFERENCES Productos(Id),
+    Eliminado BIT NULL
 );

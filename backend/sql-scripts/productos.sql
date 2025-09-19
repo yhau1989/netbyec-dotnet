@@ -7,5 +7,6 @@ CREATE TABLE Productos
     Categoria NVARCHAR(50),
     Imagen NVARCHAR(255),
     Precio DECIMAL(18,2) NOT NULL,
-    Stock INT NOT NULL
+    Stock INT NOT NULL,
+    Eliminado BIT NULL
 );

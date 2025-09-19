@@ -24,5 +24,6 @@ namespace TransaccionesService.Models
         public decimal PrecioTotal { get; set; }
         [Required]
         public string? Detalle { get; set; }
+        public bool? Eliminado { get; set; }
     }
 }

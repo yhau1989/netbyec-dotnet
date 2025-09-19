@@ -1,10 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using ProductosService.Models;
-using ProductosService.Data;
 using ProductosService.Services;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace ProductosService.Controllers
 {
@@ -47,7 +43,7 @@ namespace ProductosService.Controllers
             if (!updated) return NotFound();
             return NoContent();
         }
-        
+
         [HttpPatch("{id}")]
         public async Task<ActionResult<Producto>> Patch(int id, [FromBody] Dictionary<string, object> fields)
         {

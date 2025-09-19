@@ -17,6 +17,7 @@ namespace ProductosService.Services
             try
             {
                 var query = _context.Productos.AsQueryable();
+                query = query.Where(p => p.Eliminado == null || p.Eliminado == false);
                 if (!string.IsNullOrEmpty(nombre))
                     query = query.Where(p => p.Nombre.Contains(nombre));
                 if (!string.IsNullOrEmpty(categoria))
@@ -33,7 +34,9 @@ namespace ProductosService.Services
         {
             try
             {
-                return await _context.Productos.FindAsync(id);
+                return await _context.Productos
+                    .Where(p => p.Id == id && (p.Eliminado == null || p.Eliminado == false))
+                    .FirstOrDefaultAsync();
             }
             catch (Exception)
             {
@@ -103,7 +106,8 @@ namespace ProductosService.Services
             {
                 var producto = await _context.Productos.FindAsync(id);
                 if (producto == null) return false;
-                _context.Productos.Remove(producto);
+                producto.Eliminado = true;
+                _context.Entry(producto).Property(p => p.Eliminado).IsModified = true;
                 await _context.SaveChangesAsync();
                 return true;
             }
@@ -179,7 +183,7 @@ namespace ProductosService.Services
                         prop.SetValue(producto, safeValue);
                         _context.Entry(producto).Property(prop.Name).IsModified = true;
                     }
-                    catch(Exception ex)
+                    catch (Exception ex)
                     {
                         Console.WriteLine($"Error al actualizar propiedad {prop?.Name}: {ex.Message}");
                         continue;

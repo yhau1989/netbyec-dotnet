@@ -1,176 +1,282 @@
-import { useState, type FC } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useRef } from "react";
+import type { Transaccion } from "../types/general-types";
+import { Table, Button, Alert, Input, Drawer } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
+import type { ColumnType } from "antd/es/table";
+import { useTransactionApi } from "../hooks/useTransactionsApi";
+import TransactionDrawerForm from "../components/transaction-form";
+import {
+  addTransaction,
+  updateTransaction,
+  deleteTransaction,
+} from "../ports/transactions-port";
+import { useProductosApi } from "../hooks/useProductosApi";
 
-type Transaction = {
-  id: number;
-  product: string;
-  quantity: number;
-  date: string;
-};
+const TransactionView = () => {
+  const { transacciones, loading, error, refetch } = useTransactionApi();
+  const { productos, loading: loadingProductos } = useProductosApi();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingTransaction, setEditingTransaction] =
+    useState<Transaccion | null>(null);
+  const [editMode, setEditMode] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
-type TransactionForm = {
-  product: string;
-  quantity: number;
-};
+  // Filtros y búsqueda para columnas
+  const searchInput = useRef(null);
+  const [tableState, setTableState] = useState({
+    filteredInfo: {},
+    sortedInfo: {},
+  });
+  const getColumnSearchProps = (
+    dataIndex: keyof Transaccion
+  ): ColumnType<Transaccion> => ({
+    filterDropdown: ({
+      setSelectedKeys,
+      selectedKeys,
+      confirm,
+      clearFilters,
+    }) => (
+      <div style={{ padding: 8 }}>
+        <Input
+          ref={searchInput}
+          placeholder={`Buscar ${dataIndex}`}
+          value={selectedKeys[0]}
+          onChange={(e) =>
+            setSelectedKeys(e.target.value ? [e.target.value] : [])
+          }
+          onPressEnter={() => confirm()}
+          style={{ marginBottom: 8, display: "block" }}
+        />
+        <Button
+          type="primary"
+          onClick={() => confirm()}
+          icon={<SearchOutlined />}
+          size="small"
+          style={{ width: 90, marginRight: 8 }}
+        >
+          Buscar
+        </Button>
+        <Button
+          onClick={() => {
+            if (clearFilters) clearFilters();
+            confirm();
+          }}
+          size="small"
+          style={{ width: 90 }}
+        >
+          Limpiar
+        </Button>
+      </div>
+    ),
+    filterIcon: (filtered: boolean) => (
+      <SearchOutlined style={{ color: filtered ? "#1890ff" : undefined }} />
+    ),
+    onFilter: (value, record) =>
+      record[dataIndex]
+        ? record[dataIndex]
+            .toString()
+            .toLowerCase()
+            .includes((value as string).toLowerCase())
+        : false,
+    sorter: (a, b) => {
+      if (
+        typeof a[dataIndex] === "number" &&
+        typeof b[dataIndex] === "number"
+      ) {
+        return (a[dataIndex] as number) - (b[dataIndex] as number);
+      }
+      return a[dataIndex].toString().localeCompare(b[dataIndex].toString());
+    },
+    sortDirections: ["descend", "ascend"],
+    filteredValue: (tableState.filteredInfo as any)[dataIndex] || null,
+  });
 
-const initialProducts = [
-  { name: "Producto A", stock: 10 },
-  { name: "Producto B", stock: 5 },
-];
+  const columns = [
+    { title: "ID", dataIndex: "id", key: "id", ...getColumnSearchProps("id") },
+    {
+      title: "Tipo",
+      dataIndex: "tipoTransaccion",
+      key: "tipoTransaccion",
+      ...getColumnSearchProps("tipoTransaccion"),
+    },
+    {
+      title: "Producto ID",
+      dataIndex: "productoId",
+      key: "productoId",
+      ...getColumnSearchProps("productoId"),
+    },
+    {
+      title: "Cantidad",
+      dataIndex: "cantidad",
+      key: "cantidad",
+      ...getColumnSearchProps("cantidad"),
+    },
+    {
+      title: "Precio Unitario",
+      dataIndex: "precioUnitario",
+      key: "precioUnitario",
+      ...getColumnSearchProps("precioUnitario"),
+    },
+    {
+      title: "Precio Total",
+      dataIndex: "precioTotal",
+      key: "precioTotal",
+      ...getColumnSearchProps("precioTotal"),
+    },
+    {
+      title: "Detalle",
+      dataIndex: "detalle",
+      key: "detalle",
+      ...getColumnSearchProps("detalle"),
+    },
+    {
+      title: "Fecha",
+      dataIndex: "fecha",
+      key: "fecha",
+      ...getColumnSearchProps("fecha"),
+    },
+    {
+      title: "Acciones",
+      key: "acciones",
+      render: (_: unknown, record: Transaccion) => (
+        <>
+          <Button
+            type="link"
+            onClick={() => {
+              setEditingTransaction(record);
+              setEditMode(true);
+              setDrawerOpen(true);
+            }}
+          >
+            Editar
+          </Button>
+          <Button
+            type="link"
+            danger
+            onClick={async () => {
+              await handleDeleteTransaction(record.id);
+            }}
+            disabled={saving}
+          >
+            Eliminar
+          </Button>
+        </>
+      ),
+    },
+  ];
 
-const initialTransactions: Transaction[] = [
-  { id: 1, product: "Producto A", quantity: 2, date: "2025-09-11" },
-];
-
-const TransactionsView: FC = () => {
-  const [transactions, setTransactions] =
-    useState<Transaction[]>(initialTransactions);
-  const [products, setProducts] = useState(initialProducts);
-  const [message, setMessage] = useState<string | null>(null);
-  const [search, setSearch] = useState<string>("");
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<TransactionForm>();
-
-  // Filtros avanzados: búsqueda por producto
-  const filteredTransactions = transactions.filter((t) =>
-    t.product.toLowerCase().includes(search.toLowerCase())
-  );
-
-  // Validación compleja: no vender más stock del disponible
-  const onSubmit = (data: TransactionForm) => {
-    const prod = products.find((p) => p.name === data.product);
-    if (!prod) {
-      setMessage("Error: Producto no encontrado.");
-      return;
-    }
-    if (data.quantity > prod.stock) {
-      setMessage("Error: No se puede vender más stock del disponible.");
-      return;
-    }
-    // Registrar transacción
-    const newTransaction: Transaction = {
-      id: transactions.length + 1,
-      product: data.product,
-      quantity: Number(data.quantity),
-      date: new Date().toISOString().slice(0, 10),
+  // Handlers para agregar, editar y eliminar transacciones
+  const handleAddTransaction = async (values: Partial<Transaccion>) => {
+    setSaving(true);
+    const data: Partial<Transaccion> = {
+      ...values,
+      precioTotal: values.cantidad! * values.precioUnitario!,
     };
-    setTransactions([...transactions, newTransaction]);
-    // Actualizar stock
-    setProducts(
-      products.map((p) =>
-        p.name === data.product ? { ...p, stock: p.stock - data.quantity } : p
-      )
-    );
-    setMessage("Transacción registrada exitosamente.");
-    reset();
+    await addTransaction(data);
+    setSaving(false);
+    setDrawerOpen(false);
+    refetch();
+  };
+
+  const handleEditTransaction = async (values: Partial<Transaccion>) => {
+    if (!editingTransaction) return;
+    setSaving(true);
+    await updateTransaction(editingTransaction.id, values);
+    setSaving(false);
+    setDrawerOpen(false);
+    setEditingTransaction(null);
+    setEditMode(false);
+    refetch();
+  };
+
+  const handleDeleteTransaction = async (id: number) => {
+    setSaving(true);
+    await deleteTransaction(id);
+    setSaving(false);
+    refetch();
   };
 
   return (
-    <div className="p-4">
-      <h2 className="text-2xl font-bold mb-4">Gestión de Transacciones</h2>
+    <div className="w-full mx-auto">
+      <h1 className="text-3xl font-bold mb-6">Transacciones</h1>
 
-      {/* Mensaje de éxito/error */}
-      {message && (
-        <div
-          className={`mb-4 p-2 rounded ${
-            message.startsWith("Error")
-              ? "bg-red-200 text-red-800"
-              : "bg-green-200 text-green-800"
-          }`}
-        >
-          {message}
-        </div>
-      )}
+      {error && <Alert type="error" message={error} className="mb-4" />}
 
-      {/* Búsqueda avanzada */}
-      <div className="mb-6 flex gap-2 items-center">
-        <input
-          type="text"
-          placeholder="Buscar por producto..."
-          className="border p-2 rounded w-full max-w-xs"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <button
-          className="bg-gray-300 px-3 py-2 rounded"
-          onClick={() => setSearch("")}
+      <div className="mb-6">
+        <Button
+          type="primary"
+          onClick={() => {
+            setDrawerOpen(true);
+            setEditMode(false);
+            // setEditingProduct(null);
+          }}
         >
-          Limpiar
-        </button>
+          Nueva Transacción
+        </Button>
       </div>
 
-      {/* Formulario de transacción */}
-      <form className="mb-6 space-y-4" onSubmit={handleSubmit(onSubmit)}>
-        <div>
-          <label className="block mb-1 font-medium">Producto</label>
-          <select
-            className="border p-2 rounded w-full"
-            {...register("product", { required: "Campo requerido" })}
-          >
-            <option value="">Seleccione un producto</option>
-            {products.map((p) => (
-              <option key={p.name} value={p.name}>
-                {p.name} (Stock: {p.stock})
-              </option>
-            ))}
-          </select>
-          {errors.product && (
-            <span className="text-red-600 text-sm">
-              {errors.product.message}
-            </span>
-          )}
-        </div>
-        <div>
-          <label className="block mb-1 font-medium">Cantidad</label>
-          <input
-            type="number"
-            className="border p-2 rounded w-full"
-            {...register("quantity", {
-              required: "Campo requerido",
-              min: { value: 1, message: "Debe ser mayor a 0" },
-            })}
-          />
-          {errors.quantity && (
-            <span className="text-red-600 text-sm">
-              {errors.quantity.message}
-            </span>
-          )}
-        </div>
-        <button
-          type="submit"
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Registrar transacción
-        </button>
-      </form>
+      <Drawer
+        open={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setEditingTransaction(null);
+          setEditMode(false);
+        }}
+        title={editMode ? "Editar Transacción" : "Agregar Transacción"}
+        width={400}
+        destroyOnClose
+      >
+        <TransactionDrawerForm
+          onFinish={editMode ? handleEditTransaction : handleAddTransaction}
+          initialValues={editingTransaction || {}}
+          loading={saving || loadingProductos}
+          productos={productos}
+        />
+      </Drawer>
 
-      {/* Tabla dinámica de transacciones */}
-      <table className="min-w-full border">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="border px-2 py-1">ID</th>
-            <th className="border px-2 py-1">Producto</th>
-            <th className="border px-2 py-1">Cantidad</th>
-            <th className="border px-2 py-1">Fecha</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredTransactions.map((t) => (
-            <tr key={t.id}>
-              <td className="border px-2 py-1">{t.id}</td>
-              <td className="border px-2 py-1">{t.product}</td>
-              <td className="border px-2 py-1">{t.quantity}</td>
-              <td className="border px-2 py-1">{t.date}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* Tabla de transacciones */}
+      <div className="bg-white rounded shadow overflow-x-auto">
+        <div className="mb-2 flex justify-end">
+          <Button
+            type="default"
+            size="small"
+            onClick={() => {
+              setTableState({ filteredInfo: {}, sortedInfo: {} });
+            }}
+          >
+            Limpiar filtros y ordenamiento
+          </Button>
+        </div>
+        <Table
+          loading={loading}
+          dataSource={[...transacciones]}
+          rowKey="id"
+          columns={columns}
+          pagination={{
+            current: currentPage,
+            onChange: (page) => setCurrentPage(page),
+            pageSize: 5,
+            showSizeChanger: false,
+          }}
+          className="min-w-[700px]"
+          onChange={(_pagination, filters, sorter) => {
+            setTableState({
+              filteredInfo: filters || {},
+              sortedInfo: sorter || {},
+            });
+          }}
+          {...(Object.keys(tableState.filteredInfo).length > 0 ||
+          Object.keys(tableState.sortedInfo).length > 0
+            ? {
+                filteredInfo: tableState.filteredInfo,
+                sortedInfo: tableState.sortedInfo,
+              }
+            : {})}
+        />
+      </div>
     </div>
   );
 };
 
-export default TransactionsView;
+export default TransactionView;
